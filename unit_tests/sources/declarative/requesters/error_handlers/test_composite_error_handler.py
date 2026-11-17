@@ -398,6 +398,33 @@ def test_given_split_request_window_when_interpret_response_then_stop_at_the_mat
     assert failing_handler.interpret_response.call_count == 0
 
 
+def test_given_refresh_token_then_retry_when_interpret_response_then_stop_at_the_matching_handler():
+    """
+    Without the short circuit, the fallback handler resolving the same 401 to FAIL would win over the token refresh.
+    """
+    response = create_response(401, json_body={"code": 124, "message": "Access token is expired."})
+    refreshing_handler = DefaultErrorHandler(
+        config={},
+        parameters={},
+        response_filters=[
+            HttpResponseFilter(
+                action=ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                predicate="{{ response.get('code') == 124 }}",
+                config={},
+                parameters={},
+            )
+        ],
+    )
+    fallback_handler = DefaultErrorHandler(config={}, parameters={})
+    error_handler = CompositeErrorHandler(
+        error_handlers=[refreshing_handler, fallback_handler], parameters={}
+    )
+
+    error_resolution = error_handler.interpret_response(response)
+
+    assert error_resolution.response_action == ResponseAction.REFRESH_TOKEN_THEN_RETRY
+
+
 def test_given_unrelated_response_error_when_interpret_response_then_behavior_is_unaffected():
     """
     Adding SPLIT_REQUEST_WINDOW to the short-circuit list must not change behavior for actions that were
